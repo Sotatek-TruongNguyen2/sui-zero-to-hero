@@ -1,0 +1,200 @@
+/// The main module of the SuiNS application, defines the `SuiNS` object and
+/// the authorization mechanism for interacting with the main data storage.
+module suins::suins;
+
+use suins::lolo::TestingSuiNS;
+use std::type_name::{Self, TypeName};
+use sui::balance::{Self, Balance};
+use sui::sui::SUI;
+use sui::dynamic_field as df;
+use sui::coin::{Self, Coin};
+
+use fun df::add as UID.add;
+use fun df::borrow as UID.borrow;
+use fun df::borrow_mut as UID.borrow_mut;
+use fun df::exists_ as UID.exists_;
+use fun df::remove as UID.remove;
+
+/// Trying to withdraw from an empty balance.
+const ENoProfits: u64 = 0;
+/// An application is not authorized to access the feature.
+const EAppNotAuthorized: u64 = 1;
+const ENoProfitsInCoinType: u64 = 2;
+
+/// An admin capability. The admin has full control over the application.
+/// This object must be issued only once during module initialization.
+public struct AdminCap has key, store { id: UID }
+
+/// The main application object. Stores the state of the application,
+/// used for adding / removing and reading name records.
+///
+/// Dynamic fields:
+/// - `registry: RegistryKey<R> -> R`
+/// - `config: ConfigKey<C> -> C`
+public struct SuiNS has key {
+    id: UID,
+    balance: Balance<SUI>,
+}
+
+public struct SUINS has drop {}
+
+
+// === Keys ===
+
+/// Key under which a configuration is stored. It is type dependent, so
+/// that different configurations can be stored at the same time. Eg
+/// currently we store application `Config` (and `Promotion` configuration).
+public struct ConfigKey<phantom Config> has copy, store, drop {}
+
+/// Key under which the Registry object is stored.
+///
+/// In the V1, the object stored under this key is `Registry`, however, for
+/// future migration purposes (if we ever need to change the Registry), we
+/// keep the phantom parameter so two different Registries can co-exist.
+public struct RegistryKey<phantom Config> has copy, store, drop {}
+public struct BalanceKey<phantom T> has copy, drop, store {}
+
+/// Module initializer:
+/// - create SuiNS object
+/// - create admin capability
+/// - claim Publisher object (for Display and TransferPolicy)
+fun init(otw: SUINS, ctx: &mut TxContext) {
+    sui::package::claim_and_keep(otw, ctx);
+
+    // Create the admin capability; only performed once.
+    transfer::transfer(
+        AdminCap {
+            id: object::new(ctx),
+        },
+        ctx.sender(),
+    );
+
+    let suins = SuiNS {
+        id: object::new(ctx),
+        balance: balance::zero(),
+    };
+
+    transfer::share_object(suins);
+}
+
+// === Admin actions ===
+
+/// Withdraw from the SuiNS balance directly and access the Coins within the
+/// same
+/// transaction. This is useful for the admin to withdraw funds from the SuiNS
+/// and then send them somewhere specific or keep at the address.
+public fun withdraw(_: &AdminCap, self: &mut SuiNS, ctx: &mut TxContext): Coin<SUI> {
+    let amount = self.balance.value();
+    assert!(amount > 0, ENoProfits);
+    coin::take(&mut self.balance, amount, ctx)
+}
+
+public fun withdraw_custom<T>(_: &AdminCap, self: &mut SuiNS, ctx: &mut TxContext): Coin<T> {
+    let balance_key = BalanceKey<T> {};
+    assert!(self.id.exists_(balance_key), ENoProfitsInCoinType);
+    self.id.borrow_mut<_, Balance<T>>(balance_key).withdraw_all().into_coin(ctx)
+}
+
+// === App Auth ===
+
+/// An authorization Key kept in the SuiNS - allows applications access
+/// protected features of the SuiNS (such as app_add_balance, etc.)
+/// The `App` type parameter is a witness which should be defined in the
+/// original module (Controller, Registry, Registrar - whatever).
+public struct AppKey<phantom App: drop> has copy, drop, store {}
+
+/// Authorize an application to access protected features of the SuiNS.
+public fun authorize_app<App: drop>(_: &AdminCap, self: &mut SuiNS) {
+    self.id.add(AppKey<App> {}, true);
+}
+
+/// Deauthorize an application by removing its authorization key.
+public fun deauthorize_app<App: drop>(_: &AdminCap, self: &mut SuiNS): bool {
+    self.id.remove(AppKey<App> {})
+}
+
+/// Check if an application is authorized to access protected features of
+/// the SuiNS.
+public fun is_app_authorized<App: drop>(self: &SuiNS): bool {
+    self.id.exists_(AppKey<App> {})
+}
+
+/// Assert that an application is authorized to access protected features of
+/// the SuiNS. Aborts with `EAppNotAuthorized` if not.
+public fun assert_app_is_authorized<App: drop>(self: &SuiNS) {
+    assert!(self.is_app_authorized<App>(), EAppNotAuthorized);
+}
+
+// === Protected features ===
+public fun app_add_balance<App: drop>(_: App, self: &mut SuiNS, balance: Balance<SUI>) {
+    self.assert_app_is_authorized<App>();
+    self.balance.join(balance);
+}
+
+public fun app_add_custom_balance<App: drop, T>(_: App, self: &mut SuiNS, balance: Balance<T>) {
+    self.assert_app_is_authorized<App>();
+    let key = BalanceKey<T>{};
+    if (self.id.exists_(key)) {
+        let balances = self.id.borrow_mut<_, Balance<T>>(key);
+        balances.join(balance);
+    } else {
+        self.id.add(key, balance)
+    }
+}
+
+public fun app_registry_mut<App: drop, R: store>(_: App, self: &mut SuiNS): &mut R {
+    self.assert_app_is_authorized<App>();
+    self.pkg_registry_mut<R>()
+}
+
+// === Config management ===
+
+public fun add_config<Config: store + drop>(_: &AdminCap, self: &mut SuiNS, config: Config) {
+    self.id.add(ConfigKey<Config>{}, config)
+}
+
+public fun get_config<Config: store + drop>(self: &SuiNS): &Config {
+    self.id.borrow(ConfigKey<Config>{})
+}
+
+/// Get the configuration object for editing. The admin should put it back
+/// after editing (no extra check performed). Can be used to swap
+/// configuration since the `T` has `drop`. Eg nothing is stopping the admin
+/// from removing the configuration object and adding a new one.
+///
+/// Fully taking the config also allows for edits within a transaction.
+public fun remove_config<Config: store + drop>(_: &AdminCap, self: &mut SuiNS): Config {
+    self.id.remove(ConfigKey<Config> {})
+}
+
+// === Registry ===
+public fun registry<R: store>(self: &SuiNS): &R {
+    self.id.borrow(RegistryKey<R>{})
+}
+
+/// Get a mutable access to the `Registry` object. Can only be called
+/// internally by SuiNS.
+public(package) fun pkg_registry_mut<R: store>(self: &mut SuiNS): &mut R {
+    self.id.borrow_mut(RegistryKey<R> {})
+}
+
+#[test_only]
+public fun share_for_testing(self: SuiNS) {
+    transfer::share_object(self)
+}
+
+#[test_only]
+public fun share_for_testing_facade(self: TestingSuiNS) {
+    transfer::public_share_object(self)
+}
+
+#[test_only]
+public fun new_for_testing(ctx: &mut TxContext): (SuiNS, AdminCap) {
+    (SuiNS { id: object::new(ctx), balance: balance::zero() }, AdminCap { id: object::new(ctx) })
+}
+
+#[test_only]
+/// Create an admin cap - only for testing.
+public fun create_admin_cap_for_testing(ctx: &mut TxContext): AdminCap {
+    AdminCap { id: object::new(ctx) }
+}
