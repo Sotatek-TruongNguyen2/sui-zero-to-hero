@@ -2,8 +2,6 @@
 /// the authorization mechanism for interacting with the main data storage.
 module suins::suins;
 
-use suins::lolo::TestingSuiNS;
-use std::type_name::{Self, TypeName};
 use sui::balance::{Self, Balance};
 use sui::sui::SUI;
 use sui::dynamic_field as df;
@@ -178,14 +176,10 @@ public(package) fun pkg_registry_mut<R: store>(self: &mut SuiNS): &mut R {
     self.id.borrow_mut(RegistryKey<R> {})
 }
 
+// === Testing ===
 #[test_only]
 public fun share_for_testing(self: SuiNS) {
     transfer::share_object(self)
-}
-
-#[test_only]
-public fun share_for_testing_facade(self: TestingSuiNS) {
-    transfer::public_share_object(self)
 }
 
 #[test_only]
@@ -197,4 +191,21 @@ public fun new_for_testing(ctx: &mut TxContext): (SuiNS, AdminCap) {
 /// Create an admin cap - only for testing.
 public fun create_admin_cap_for_testing(ctx: &mut TxContext): AdminCap {
     AdminCap { id: object::new(ctx) }
+}
+
+#[test_only]
+/// Burn the admin cap - only for testing.
+public fun burn_admin_cap_for_testing(admin_cap: AdminCap) {
+    let AdminCap { id } = admin_cap;
+    id.delete();
+}
+
+#[test_only]
+public fun authorize_app_for_testing<App: drop>(self: &mut SuiNS) {
+    df::add(&mut self.id, AppKey<App> {}, true)
+}
+
+#[test_only]
+public fun total_balance(self: &SuiNS): u64 {
+    self.balance.value()
 }

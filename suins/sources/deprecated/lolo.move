@@ -1,8 +1,12 @@
 module suins::lolo;
 
-public struct TestingSuiNS has key, store {
+public struct TestingSuiNS has key {
     id: UID,
     count: u64
+}
+
+public struct AuthorityCap has key {
+    id: UID
 }
 
 public fun app_add_custom_balance_testing_only<App: drop>(_: App, testSuiNS: &mut TestingSuiNS) {
@@ -14,6 +18,17 @@ public fun app_add_custom_balance_testing_only<App: drop>(_: App, testSuiNS: &mu
 #[test_only]
 public fun share_for_testing_v2(self: TestingSuiNS) {
     transfer::share_object(self)
+}
+
+#[test_only]
+public fun share_for_testing_v3(self: AuthorityCap) {
+    transfer::share_object(self)
+}
+
+#[test_only]
+/// Create an admin cap - only for testing.
+public fun create_admin_cap_for_testing_v2(ctx: &mut TxContext): AuthorityCap {
+    AuthorityCap { id: object::new(ctx) }
 }
 
 #[test_only]

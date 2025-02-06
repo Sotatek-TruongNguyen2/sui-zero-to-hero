@@ -3,8 +3,8 @@ module payments::payments_tests;
 
 use payments::payments::{PaymentsApp};
 
-use suins::suins::{Self, SuiNS, AdminCap, share_for_testing_facade};
-use suins::lolo::{TestingSuiNS, new_for_testing_v2};
+use suins::suins::{Self, SuiNS, AdminCap};
+// use suins::lolo::{TestingSuiNS, new_for_testing_v2};
 use suins::payment_tests::setup_suins;
 
 use sui::balance::Balance;
@@ -47,18 +47,18 @@ fun test_e2e() {
 //     let mut setups = vector[];
 //     setups.push_back(usdc_type_data);
 
-     let testing_suins = new_for_testing_v2(scenario.ctx());
-     share_for_testing_facade(testing_suins);
+     // let testing_suins = new_for_testing_v2(scenario.ctx());
+     // share_for_testing_facade(testing_suins);
      
-     {
-          scenario.next_tx(SUINS_ADDRESS);
-          let testing_suins = scenario.take_shared<TestingSuiNS>();
-          // // // add_up_balance<TESTUSDC>(&mut suins, coin::mint_for_testing<TESTUSDC>(10, test.ctx()).into_balance());
-          // add_up_balance(&mut suins, &mut testing_suins);
-          debug::print(&testing_suins);
-          destroy(testing_suins);
+     // {
+     //      scenario.next_tx(SUINS_ADDRESS);
+     //      let testing_suins = scenario.take_shared<TestingSuiNS>();
+     //      // // // add_up_balance<TESTUSDC>(&mut suins, coin::mint_for_testing<TESTUSDC>(10, test.ctx()).into_balance());
+     //      // add_up_balance(&mut suins, &mut testing_suins);
+     //      debug::print(&testing_suins);
+     //      destroy(testing_suins);
 
-     };
+     // };
 
      destroy(usdc_metadata);
      destroy(_admin_cap);
