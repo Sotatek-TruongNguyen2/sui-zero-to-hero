@@ -1,4 +1,6 @@
 module suilaunchpad::pool {
+    use suilaunchpad::suilaunchpad::{pkg_registry_mut, app_add_custom_balance};
+    use suilaunchpad::user_purchase_registry::{retrieve_user_purchase_record_multi_pools_mut, UserPurchaseRecordRegistry};
     use suilaunchpad::core_config::{CoreConfig};
     use suilaunchpad::suilaunchpad::{AdminCap, get_config, SuiLaunchpad};
     use sui::balance::{Self, Balance};
@@ -46,9 +48,14 @@ module suilaunchpad::pool {
     const EPoolIsFullyFunded: u64 = 4;
     const EPoolIsNotFullyFunded: u64 = 5;
     const EFundingTimeAlreadyPassed: u64 = 6;
+    const EInvalidTimeToBuy: u64 = 7;
+    const ETotalSellExceeds: u64 = 8;
 
     // === One time Witness ===
     public struct POOL has drop {}
+
+    // === Witness ===
+    public struct Pool has drop {}
 
     // === Keys ===
     public struct OfferedCurrencyKey<phantom Currency> has copy, store, drop {}
@@ -172,7 +179,7 @@ module suilaunchpad::pool {
         });
     }
 
-    public fun fund_pool<R, S>(_: &PreSalePoolOwnerCap, self: &mut PreSalePool<R,S>, amount: Coin<S>, clock: &Clock, ctx: &TxContext) {
+    public fun fund_pool<R: store, S: store>(_: &PreSalePoolOwnerCap, self: &mut PreSalePool<R,S>, amount: Coin<S>, clock: &Clock, ctx: &TxContext) {
         self.assert_valid_funding_time(clock);
         self.assert_is_not_funded();
 
@@ -187,6 +194,32 @@ module suilaunchpad::pool {
 
         self.total_sell = self.total_sell + balance.value();
         self.sell_balance.join(balance);
+    }
+
+    public fun buy<R: store, S: store>(self: &mut PreSalePool<R,S>, sui_launchpad: &mut SuiLaunchpad, mut amount: Coin<R>, clock: &Clock, ctx: &mut TxContext): Coin<S> {
+        self.assert_valid_time_to_buy(clock);
+
+        let sender = ctx.sender();
+        let digest = *(ctx.digest());
+
+        let user_purchase_record_registry = pkg_registry_mut<UserPurchaseRecordRegistry>(sui_launchpad);
+
+        let fee = amount.value() * ((100 - self.protocol_fee_pct) as u64);
+        let amount_after_fee = amount.value() - fee;
+        let balance_received = amount.split(amount_after_fee, ctx);
+
+        assert!(self.total_sold + amount_after_fee > self.total_sell, ETotalSellExceeds);
+
+        let user_purchase_record_multi_pools = user_purchase_record_registry.retrieve_user_purchase_record_multi_pools_mut(sender, ctx);
+        user_purchase_record_multi_pools.record_user_purchase(sender, object::id_address(self), amount_after_fee, digest);
+        sui_launchpad.app_add_custom_balance<Pool, R>(Pool {}, amount.into_balance());
+
+        // Add-up raise balance + total raised, then increase total sold amount
+        self.raised_balance.join(balance_received.into_balance());
+        self.total_sold = self.total_sold + amount_after_fee;
+        self.total_raised = self.total_raised + amount_after_fee;
+
+        self.sell_balance.split(amount_after_fee).into_coin(ctx)
     }
 
     public fun cancel<R,S>(_: &AdminCap, self: &mut PreSalePool<R,S>, clock: &Clock, ctx: &mut TxContext): Coin<S> {
@@ -246,5 +279,9 @@ module suilaunchpad::pool {
 
     public fun assert_valid_funding_time<R,S>(self: &PreSalePool<R,S>, clock: &Clock) {
         assert!(self.open_time_ms > clock.timestamp_ms(), EFundingTimeAlreadyPassed);
+    }
+
+    public fun assert_valid_time_to_buy<R,S>(self: &PreSalePool<R,S>, clock: &Clock) {
+        assert!(self.valid_time_to_buy(clock), EInvalidTimeToBuy);
     }
 }

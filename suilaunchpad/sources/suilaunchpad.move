@@ -35,6 +35,7 @@ module suilaunchpad::suilaunchpad {
     // === Keys ===
     public struct ConfigKey<phantom Config> has copy, drop, store {}
     public struct BalanceKey<phantom T> has copy, drop, store {}
+    public struct RegistryKey<phantom Config> has copy, drop, store {}
 
     // === App Auth ===
 
@@ -133,5 +134,32 @@ module suilaunchpad::suilaunchpad {
     /// Fully taking the config also allows for edits within a transaction.
     public fun remove_config<Config: store + drop>(_: &AdminCap, self: &mut SuiLaunchpad): Config {
         self.id.remove(ConfigKey<Config> {})
+    }
+
+
+    /// Get a mutable access to the `Registry` object. Can only be performed by
+    /// authorized
+    /// applications.
+    public fun app_registry_mut<App: drop, R: store>(_: App, self: &mut SuiLaunchpad): &mut R {
+        self.assert_app_is_authorized<App>();
+        self.pkg_registry_mut<R>()
+    }
+
+    // === Registry ===
+
+    /// Get a read-only access to the `Registry` object.
+    public fun registry<R: store>(self: &SuiLaunchpad): &R {
+        self.id.borrow(RegistryKey<R> {})
+    }
+
+    /// Add a registry to the SuiNS. Can only be performed by the admin.
+    public fun add_registry<R: store>(_: &AdminCap, self: &mut SuiLaunchpad, registry: R) {
+        self.id.add(RegistryKey<R> {}, registry);
+    }
+
+    /// Get a mutable access to the `Registry` object. Can only be called
+    /// internally by SuiNS.
+    public(package) fun pkg_registry_mut<R: store>(self: &mut SuiLaunchpad): &mut R {
+        self.id.borrow_mut(RegistryKey<R> {})
     }
 }
