@@ -21,16 +21,22 @@ module suilaunchpad::user_purchase_registry {
         }
     }
 
-    public fun record_user_purchase(self: &mut UserPurchaseRecordMultiPools, user_addr: address, pool_addr: address, amount: u64, digest: vector<u8>) {
-        if (self.user_purchase_record_existed(pool_addr)) {
-            self.records.borrow_mut(pool_addr).add_new_buy_tx(digest, amount);
-            return
+    fun new_user_purchase_record(user_addr: address, pool_addr: address, ctx: &mut TxContext): UserPurchaseRecord {
+        user_purchase_record::new(pool_addr, user_addr, ctx)
+    }   
+
+    fun create_user_purchase_record_if_needed(self: &mut UserPurchaseRecordRegistry, user_addr: address, pool_addr: address, ctx: &mut TxContext) {
+        let existed = self.user_purchase_record_existed_for_registry(user_addr, pool_addr);
+        if (!existed) {
+            let user_purchase_record = new_user_purchase_record(user_addr, pool_addr, ctx);
+            self.retrieve_user_purchase_record_multi_pools_mut(user_addr, ctx).records.add(pool_addr, user_purchase_record);
         };
 
-        let user_purchase_record = user_purchase_record::new(pool_addr, user_addr);
-        self.records.add(pool_addr, user_purchase_record);
+    }
 
-        self.records.borrow_mut(pool_addr).add_new_buy_tx(digest, amount);
+    public fun record_user_purchase(self: &mut UserPurchaseRecordRegistry, user_addr: address, pool_addr: address, amount: u64, digest: vector<u8>, ctx: &mut TxContext) {
+        self.create_user_purchase_record_if_needed(user_addr, pool_addr, ctx);
+         self.retrieve_user_purchase_record_multi_pools_mut(user_addr, ctx).records.borrow_mut(pool_addr).add_new_buy_tx(digest, amount);
     }
 
     public(package) fun retrieve_user_purchase_record_multi_pools_mut(self: &mut UserPurchaseRecordRegistry, user_addr: address, ctx: &mut TxContext): &mut UserPurchaseRecordMultiPools {
@@ -61,7 +67,18 @@ module suilaunchpad::user_purchase_registry {
         self.registry.contains(user_addr)
     }
 
-     public fun user_purchase_record_existed(self: &UserPurchaseRecordMultiPools, pool_addr: address): bool {
+
+    public fun user_purchase_record_existed_for_registry(self: &UserPurchaseRecordRegistry, user_addr: address, pool_addr: address): bool {
+        let user_purchase_record_multi_pools = self.retrieve_user_purchase_record_multi_pools(user_addr);
+        
+        if (user_purchase_record_multi_pools.user_purchase_record_existed(pool_addr)) {
+            return true
+        };
+
+        false
+    }
+
+    public fun user_purchase_record_existed(self: &UserPurchaseRecordMultiPools, pool_addr: address): bool {
         self.records.contains(pool_addr)
     }
 }

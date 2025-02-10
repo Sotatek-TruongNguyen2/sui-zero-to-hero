@@ -1,13 +1,13 @@
 module suilaunchpad::pool {
     use suilaunchpad::suilaunchpad::{pkg_registry_mut, app_add_custom_balance};
-    use suilaunchpad::user_purchase_registry::{retrieve_user_purchase_record_multi_pools_mut, UserPurchaseRecordRegistry};
+    use suilaunchpad::user_purchase_registry::{UserPurchaseRecordRegistry};
     use suilaunchpad::core_config::{CoreConfig};
     use suilaunchpad::suilaunchpad::{AdminCap, get_config, SuiLaunchpad};
     use sui::balance::{Self, Balance};
     use sui::clock::Clock;
     use std::type_name::{Self, TypeName};
     use sui::event::{Self};
-    use sui::coin::{Coin, Self};
+    use sui::coin::{Coin};
     use sui::dynamic_field as df;
 
     use fun df::add as UID.add;
@@ -210,11 +210,10 @@ module suilaunchpad::pool {
 
         assert!(self.total_sold + amount_after_fee > self.total_sell, ETotalSellExceeds);
 
-        let user_purchase_record_multi_pools = user_purchase_record_registry.retrieve_user_purchase_record_multi_pools_mut(sender, ctx);
-        user_purchase_record_multi_pools.record_user_purchase(sender, object::id_address(self), amount_after_fee, digest);
+        user_purchase_record_registry.record_user_purchase(sender, object::id_address(self), amount_after_fee, digest, ctx);
         sui_launchpad.app_add_custom_balance<Pool, R>(Pool {}, amount.into_balance());
 
-        // Add-up raise balance + total raised, then increase total sold amount
+        // Add-up raise balance + total raised, then increase total sold amount,
         self.raised_balance.join(balance_received.into_balance());
         self.total_sold = self.total_sold + amount_after_fee;
         self.total_raised = self.total_raised + amount_after_fee;

@@ -1,5 +1,5 @@
 module suilaunchpad::user_purchase_record {
-    // use sui::table::{Table, Self};
+    use sui::table::{Table, Self};
     use sui::vec_map::{Self, VecMap};
     use std::string::String;
 
@@ -7,20 +7,20 @@ module suilaunchpad::user_purchase_record {
         pool_addr: address,
         usr_addr: address,
         total_desired_sell_tokens: u64,
-        // buy_history: Table<vector<u8>, bool>,
+        buy_history: Table<vector<u8>, bool>,
         /// Additional data which may be stored in a record
         data: VecMap<String, String>,
     }   
     
     // === Errors ===
-    // const ETxHashExisted: u64 = 1;
+    const ETxHashExisted: u64 = 1;
 
-    public fun new(pool_addr: address, usr_addr: address): UserPurchaseRecord {
+    public fun new(pool_addr: address, usr_addr: address, ctx: &mut TxContext): UserPurchaseRecord {
         UserPurchaseRecord {
             pool_addr,
             usr_addr,
             total_desired_sell_tokens: 0,
-            // buy_history: table::new(ctx),
+            buy_history: table::new(ctx),
             data: vec_map::empty()
         }
     }
@@ -30,8 +30,8 @@ module suilaunchpad::user_purchase_record {
     }
 
     public fun add_new_buy_tx(self: &mut UserPurchaseRecord, tx_hash: vector<u8>, amount: u64) {
-        // assert!(!self.buy_history.contains(tx_hash), ETxHashExisted);
-        // self.buy_history.add(tx_hash, true);
+        assert!(!self.buy_history.contains(tx_hash), ETxHashExisted);
+        self.buy_history.add(tx_hash, true);
         self.total_desired_sell_tokens = self.total_desired_sell_tokens + amount;
     }
 
